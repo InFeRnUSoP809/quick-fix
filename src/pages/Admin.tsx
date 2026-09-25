@@ -1,15 +1,35 @@
-import { useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import { AppShell, type NavItem } from "@/components/AppShell";
+import { AppShell } from "@/components/AppShell";
 import { useNavItems } from "@/pages/Dashboard";
 import {
   ProblemDetailDialog,
   ResultBody,
-  timeLabel,
 } from "@/components/problems";
+import {
+  adminActivatePrompt,
+  adminListAllProblems,
+  adminListRecentRequests,
+  adminListUsers,
+  adminResetTokensUsed,
+  adminSavePromptVersion,
+  adminSetUserRole,
+  adminTestConnection,
+  adminTestPrompt,
+  adminUpdateApiSettings,
+  adminUpdateSetting,
+  getApiSettingsInfo,
+  getBudgetStatus,
+  listMyProblems,
+  listPrompts,
+  getSystemSettings,
+  type AdminProblemRow,
+  type AdminUserRow,
+  type MyProblemRow,
+  type PromptRow,
+  type UsageRow,
+} from "@/lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +85,22 @@ import {
 /* Shared bits                                                         */
 /* ------------------------------------------------------------------ */
 
+function timeLabel(iso: string): string {
+  const ts = new Date(iso).getTime();
+  const diff = Date.now() - ts;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function StatusBadge({ status }: { status: string }) {
   return (
     <Badge
@@ -117,10 +153,47 @@ function StatCard({
 /* ------------------------------------------------------------------ */
 
 function OverviewTab() {
-  const overview = useQuery(api.admin.getOverview, {});
-  const budget = useQuery(api.aiBudget.getBudgetStatus, {});
+  const [stats, setStats] = useState<{
+    users: number;
+    problems: number;
+    requests: number;
+    failed: number;
+    activeVersion: string;
+  } | null>(null);
+  const [budget, setBudget] = useState<Awaited<ReturnType<typeof getBudgetStatus>> | null>(null);
+  const [recent, setRecent] = useState<MyProblemRow[]>([]);
 
-  if (overview === undefined || budget === undefined) {
+  useEffect(() => {
+    (async () => {
+      try {
+        const [b, prompts, users, problems, requests, mine] = await Promise.all([
+          getBudgetStatus(),
+          listPrompts(),
+          adminListUsers(),
+          adminListAllProblems(),
+          adminListRecentRequests(200),
+          listMyProblems(8),
+        ]);
+        setBudget(b);
+        setRecent(mine);
+        setStats({
+          users: users.length,
+          problems: problems.length,
+          requests: requests.length,
+          failed: requests.filter((r) => r.status === "failed").length,
+          activeVersion: prompts.find((p) => p.is_active)
+            ? `v${prompts.find((p) => p.is_active)!.version}`
+            : "none",
+        });
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to load overview.",
+        );
+      }
+    })();
+  }, []);
+
+  if (!stats || !budget) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -133,27 +206,18 @@ function OverviewTab() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Users" value={overview.totalUsers} icon={Users} />
-        <StatCard
-          label="Problems"
-          value={overview.totalProblems}
-          icon={FileText}
-        />
+        <StatCard label="Users" value={stats.users} icon={Users} />
+        <StatCard label="Problems" value={stats.problems} icon={FileText} />
         <StatCard
           label="AI requests"
-          value={overview.aiRequests}
-          hint={`${overview.failedRequests} failed`}
+          value={stats.requests}
+          hint={`${stats.failed} failed`}
           icon={Activity}
         />
-        <StatCard
-          label="Active prompt"
-          value={overview.activePromptVersion}
-          icon={MessageSquareCode}
-        />
+        <StatCard label="Active prompt" value={stats.activeVersion} icon={MessageSquareCode} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Token budget */}
         <Card className="shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -173,19 +237,13 @@ function OverviewTab() {
                 of {budget.budget.toLocaleString()} tokens
               </span>
             </div>
-            <Progress
-              value={budget.percent}
-              className="mt-3 h-2"
-              aria-label="Token budget usage"
-            />
+            <Progress value={budget.percent} className="mt-3 h-2" />
             <p className="mt-2 text-xs text-muted-foreground">
-              {budget.remaining.toLocaleString()} tokens remaining ·{" "}
-              {budget.requestCount} requests logged
+              {budget.remaining.toLocaleString()} tokens remaining
             </p>
           </CardContent>
         </Card>
 
-        {/* Connection status */}
         <Card className="shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -193,78 +251,44 @@ function OverviewTab() {
               DeepSeek connection
             </CardTitle>
             <CardDescription>
-              Key lives server-side only — never in the browser.
+              The key lives server-side — as a Supabase Edge Function secret.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-2 text-sm">
-              {overview.deepseekConfigured ? (
-                <>
-                  <CheckCircle2 className="size-4 text-emerald-600" />
-                  API key configured
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="size-4 text-amber-600" />
-                  No API key configured
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              {overview.aiEnabled ? (
-                <>
-                  <CheckCircle2 className="size-4 text-emerald-600" />
-                  AI enabled
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="size-4 text-amber-600" />
-                  AI disabled by an administrator
-                </>
-              )}
-            </div>
-            {!overview.deepseekConfigured && (
-              <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                Add <code className="font-mono">DEEPSEEK_API_KEY</code> in the
-                project's Keys settings, then run a connection test from the
-                Settings tab.
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              Run <code className="font-mono">supabase functions deploy quickfix-ai</code>{" "}
+              and set the key with{" "}
+              <code className="font-mono">supabase secrets set DEEPSEEK_API_KEY=sk-…</code>.
+              The Settings tab's "Test connection" verifies the real thing.
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-none lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Recent problems (all users)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recent.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No problems submitted yet.
               </p>
+            ) : (
+              recent.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">{p.problem_text}</span>
+                  <StatusBadge status={p.status} />
+                  <span className="hidden w-16 shrink-0 text-right text-xs text-muted-foreground sm:inline">
+                    {timeLabel(p.created_at)}
+                  </span>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Recent problems */}
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle className="text-base">Recent problems</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {overview.recentProblems.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No problems submitted yet.
-            </p>
-          ) : (
-            overview.recentProblems.map((p) => (
-              <div
-                key={p._id}
-                className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {p.problemText}
-                </span>
-                <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-                  {p.ownerEmail}
-                </span>
-                <StatusBadge status={p.status} />
-                <span className="hidden w-16 shrink-0 text-right text-xs text-muted-foreground sm:inline">
-                  {timeLabel(p.createdAt)}
-                </span>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -274,78 +298,77 @@ function OverviewTab() {
 /* ------------------------------------------------------------------ */
 
 function UsersTab() {
-  const users = useQuery(api.admin.listUsers, {});
-  const setUserRole = useMutation(api.admin.setUserRole);
+  const [users, setUsers] = useState<AdminUserRow[] | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    try {
+      setUsers(await adminListUsers());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load users.");
+      setUsers([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const handleRoleChange = async (userId: string, role: string) => {
     try {
-      await setUserRole({
-        userId: userId as Id<"users">,
-        role: role === "admin" ? "admin" : "user",
-      });
+      await adminSetUserRole(userId, role === "admin" ? "admin" : "user");
       toast.success(`Role updated to ${role}`);
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update role");
+      toast.error(error instanceof Error ? error.message : "Failed to update role.");
     }
   };
-
-  if (users === undefined) {
-    return <Skeleton className="h-64 rounded-xl" />;
-  }
 
   return (
     <Card className="shadow-none">
       <CardHeader>
         <CardTitle className="text-base">Users</CardTitle>
         <CardDescription>
-          Roles are enforced server-side on every request.
+          Role changes are validated server-side; only admins can change them.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead className="w-32">Role</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((u) => (
-              <TableRow key={u._id}>
-                <TableCell className="font-medium">
-                  {u.name ?? "—"}
-                  {u.isAnonymous && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      (guest)
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {u.email ?? "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {timeLabel(u.createdAt)}
-                </TableCell>
-                <TableCell>
-                  <Select
-                    value={u.role}
-                    onValueChange={(v) => void handleRoleChange(u._id, v)}
-                  >
-                    <SelectTrigger size="sm" className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user">user</SelectItem>
-                      <SelectItem value="admin">admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
+        {users === undefined ? (
+          <Skeleton className="h-64 rounded-xl" />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead>Joined</TableHead>
+                <TableHead className="w-32">Role</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {users.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium">{u.email ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {timeLabel(u.created_at)}
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={u.role}
+                      onValueChange={(v) => void handleRoleChange(u.id, v)}
+                    >
+                      <SelectTrigger size="sm" className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">user</SelectItem>
+                        <SelectItem value="admin">admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
@@ -357,20 +380,23 @@ function UsersTab() {
 
 function ProblemsTab() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);
+  const [rows, setRows] = useState<AdminProblemRow[] | undefined>(undefined);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const problems = useQuery(
-    api.admin.listAllProblems,
-    statusFilter === "all"
-      ? { limit: 100 }
-      : {
-          limit: 100,
-          status: statusFilter as
-            | "pending"
-            | "processing"
-            | "completed"
-            | "failed",
-        },
+  useEffect(() => {
+    (async () => {
+      try {
+        setRows(await adminListAllProblems());
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to load problems.");
+        setRows([]);
+      }
+    })();
+  }, []);
+
+  const filtered = useMemo(
+    () => (rows ?? []).filter((r) => statusFilter === "all" || r.status === statusFilter),
+    [rows, statusFilter],
   );
 
   return (
@@ -379,9 +405,7 @@ function ProblemsTab() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-base">Submitted problems</CardTitle>
-            <CardDescription>
-              Every problem across all users, newest first.
-            </CardDescription>
+            <CardDescription>All users, newest first.</CardDescription>
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger size="sm" className="w-36">
@@ -397,9 +421,9 @@ function ProblemsTab() {
           </Select>
         </CardHeader>
         <CardContent>
-          {problems === undefined ? (
+          {rows === undefined ? (
             <Skeleton className="h-64 rounded-xl" />
-          ) : problems.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No problems match this filter.
             </p>
@@ -415,23 +439,23 @@ function ProblemsTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {problems.map((p) => (
+                {filtered.map((p) => (
                   <TableRow
-                    key={p._id}
+                    key={p.id}
                     className="cursor-pointer"
-                    onClick={() => setSelectedId(p._id)}
+                    onClick={() => setSelectedId(p.id)}
                   >
                     <TableCell className="max-w-64 truncate font-medium">
-                      {p.problemText}
+                      {p.problem_text}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {p.owner?.email ?? "unknown"}
+                      {(p as { owner_email?: string }).owner_email ?? "unknown"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {timeLabel(p.createdAt)}
+                      {timeLabel(p.created_at)}
                     </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
-                      {p.totalTokens > 0 ? p.totalTokens.toLocaleString() : "—"}
+                      {p.total_tokens > 0 ? p.total_tokens.toLocaleString() : "—"}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={p.status} />
@@ -444,10 +468,7 @@ function ProblemsTab() {
         </CardContent>
       </Card>
 
-      <ProblemDetailDialog
-        problemId={selectedId}
-        onClose={() => setSelectedId(null)}
-      />
+      <ProblemDetailDialog problemId={selectedId} onClose={() => setSelectedId(null)} />
     </>
   );
 }
@@ -457,10 +478,24 @@ function ProblemsTab() {
 /* ------------------------------------------------------------------ */
 
 function UsageTab() {
-  const budget = useQuery(api.aiBudget.getBudgetStatus, {});
-  const requests = useQuery(api.admin.listRecentAiRequests, { limit: 25 });
-  const setTokensUsed = useMutation(api.aiBudget.adminSetTokensUsed);
+  const [budget, setBudget] = useState<Awaited<ReturnType<typeof getBudgetStatus>> | null>(null);
+  const [requests, setRequests] = useState<UsageRow[] | undefined>(undefined);
   const [resetValue, setResetValue] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const [b, r] = await Promise.all([getBudgetStatus(), adminListRecentRequests(25)]);
+      setBudget(b);
+      setRequests(r);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load usage.");
+      setRequests([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const handleReset = async () => {
     const n = Number(resetValue);
@@ -469,19 +504,18 @@ function UsageTab() {
       return;
     }
     try {
-      await setTokensUsed({ used: n });
+      await adminResetTokensUsed(n);
       toast.success(`Token counter set to ${n.toLocaleString()}`);
       setResetValue("");
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to reset");
+      toast.error(error instanceof Error ? error.message : "Failed to reset.");
     }
   };
 
   return (
     <div className="space-y-4">
-      {budget === undefined ? (
-        <Skeleton className="h-40 rounded-xl" />
-      ) : (
+      {budget && (
         <Card className="shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -493,37 +527,17 @@ function UsageTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Used
-                </p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Used</p>
                 <p className="mt-1 text-xl font-semibold tabular-nums">
                   {budget.used.toLocaleString()}
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Remaining
-                </p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Remaining</p>
                 <p className="mt-1 text-xl font-semibold tabular-nums">
                   {budget.remaining.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Input tokens
-                </p>
-                <p className="mt-1 text-xl font-semibold tabular-nums">
-                  {budget.inputTokens.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Output tokens
-                </p>
-                <p className="mt-1 text-xl font-semibold tabular-nums">
-                  {budget.outputTokens.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -561,9 +575,7 @@ function UsageTab() {
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle className="text-base">Recent AI requests</CardTitle>
-          <CardDescription>
-            Last 25 calls, including admin prompt tests.
-          </CardDescription>
+          <CardDescription>Last 25 calls, including admin prompt tests.</CardDescription>
         </CardHeader>
         <CardContent>
           {requests === undefined ? (
@@ -588,47 +600,39 @@ function UsageTab() {
               </TableHeader>
               <TableBody>
                 {requests.map((r) => (
-                  <TableRow key={r._id}>
+                  <TableRow key={r.id}>
                     <TableCell className="text-muted-foreground">
-                      {timeLabel(r.createdAt)}
+                      {timeLabel(r.created_at)}
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"
                         className={cn(
-                          r.kind === "test"
-                            ? "border-amber-500/40 text-amber-700"
-                            : "text-muted-foreground",
+                          r.is_test ? "border-amber-500/40 text-amber-700" : "text-muted-foreground",
                         )}
                       >
-                        {r.kind}
+                        {r.is_test ? "test" : "problem"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {r.model}
+                    <TableCell className="font-mono text-xs">{r.model}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.input_tokens.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {r.inputTokens.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.outputTokens.toLocaleString()}
+                      {r.output_tokens.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {r.totalTokens.toLocaleString()}
+                      {r.total_tokens.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {r.responseTimeMs > 0 ? `${(r.responseTimeMs / 1000).toFixed(1)}s` : "—"}
+                      {r.response_time_ms > 0 ? `${(r.response_time_ms / 1000).toFixed(1)}s` : "—"}
                     </TableCell>
                     <TableCell>
-                      {r.status === "success" ? (
-                        <StatusBadge status="success" />
-                      ) : (
-                        <span
-                          className="text-xs text-destructive"
-                          title={r.errorMessage ?? undefined}
-                        >
-                          failed
-                        </span>
+                      <StatusBadge status={r.status} />
+                      {r.status === "failed" && r.error_message && (
+                        <p className="mt-1 max-w-40 truncate text-[11px] text-destructive">
+                          {r.error_message}
+                        </p>
                       )}
                     </TableCell>
                   </TableRow>
@@ -643,20 +647,11 @@ function UsageTab() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Prompts: edit, version, activate, test                              */
+/* Prompts                                                             */
 /* ------------------------------------------------------------------ */
 
 function PromptsTab() {
-  const prompts = useQuery(api.admin.listPrompts, {});
-  const saveVersion = useMutation(api.admin.savePromptVersion);
-  const activate = useMutation(api.admin.activatePrompt);
-  const testPrompt = useAction(api.ai.testPrompt);
-
-  const activePrompt = useMemo(
-    () => prompts?.find((p) => p.isActive),
-    [prompts],
-  );
-
+  const [prompts, setPrompts] = useState<PromptRow[] | undefined>(undefined);
   const [name, setName] = useState("");
   const [draftText, setDraftText] = useState("");
   const [testProblem, setTestProblem] = useState(
@@ -670,25 +665,48 @@ function PromptsTab() {
     tokens: number;
   } | null>(null);
 
+  const load = useCallback(async () => {
+    try {
+      setPrompts(await listPrompts());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load prompts.");
+      setPrompts([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const activePrompt = useMemo(
+    () => prompts?.find((p) => p.is_active),
+    [prompts],
+  );
+
   const draftIsValid = draftText.includes("{{problem}}");
 
   const handleSave = async () => {
     try {
-      const res = await saveVersion({ name: name || "QuickFix prompt", promptText: draftText });
-      toast.success(`Saved prompt v${res.version} — now active`);
+      const version = await adminSavePromptVersion(
+        name || "QuickFix prompt",
+        draftText,
+      );
+      toast.success(`Saved prompt v${version} — now active`);
       setName("");
       setDraftText("");
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save prompt");
+      toast.error(error instanceof Error ? error.message : "Failed to save prompt.");
     }
   };
 
-  const handleActivate = async (promptId: Id<"aiPrompts">) => {
+  const handleActivate = async (promptId: string) => {
     try {
-      await activate({ promptId });
+      await adminActivatePrompt(promptId);
       toast.success("Prompt version activated");
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to activate");
+      toast.error(error instanceof Error ? error.message : "Failed to activate.");
     }
   };
 
@@ -696,17 +714,17 @@ function PromptsTab() {
     setTesting(true);
     setTestResult(null);
     try {
-      const outcome = await testPrompt({
-        problem: testProblem,
-        draftPromptText: draftText.trim() || undefined,
-      });
+      const outcome = await adminTestPrompt(
+        testProblem,
+        draftText.trim() || undefined,
+      );
       if (outcome.ok) {
         setTestResult({ ...outcome.result, tokens: outcome.tokens });
       } else {
         toast.error(outcome.error);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Test failed");
+      toast.error(error instanceof Error ? error.message : "Test failed.");
     } finally {
       setTesting(false);
     }
@@ -714,7 +732,6 @@ function PromptsTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {/* Editor + tester */}
       <div className="space-y-4">
         <Card className="shadow-none">
           <CardHeader>
@@ -723,7 +740,7 @@ function PromptsTab() {
               Edit prompt
             </CardTitle>
             <CardDescription>
-              Saving creates a NEW version and activates it. Old versions are
+              Saving creates a NEW version and activates it — old versions are
               never overwritten. Must include{" "}
               <code className="font-mono">{"{{problem}}"}</code>.
             </CardDescription>
@@ -732,14 +749,14 @@ function PromptsTab() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={`Prompt name (e.g. "Tighter word limits")`}
+              placeholder='Prompt name (e.g. "Tighter word limits")'
             />
             <Textarea
               value={draftText}
               onChange={(e) => setDraftText(e.target.value)}
               placeholder={
                 activePrompt
-                  ? `Current active prompt (v${activePrompt.version}):\n\n${activePrompt.promptText}`
+                  ? `Current active prompt (v${activePrompt.version}):\n\n${activePrompt.prompt_text}`
                   : "You are QuickFix AI… {{problem}} …"
               }
               className="min-h-56 resize-y font-mono text-xs leading-5"
@@ -776,9 +793,9 @@ function PromptsTab() {
               Test prompt
             </CardTitle>
             <CardDescription>
-              Runs a real AI call against the draft above (or the active
-              version if the editor is empty). Tokens count against the budget
-              and are never saved as a user problem.
+              Runs a real AI call against the draft (or the active version if
+              the editor is empty). Tokens count against the budget; nothing is
+              saved as a user problem.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -786,7 +803,6 @@ function PromptsTab() {
               value={testProblem}
               onChange={(e) => setTestProblem(e.target.value)}
               className="min-h-20 resize-none"
-              placeholder="Sample problem to test with…"
             />
             <Button
               size="sm"
@@ -795,11 +811,7 @@ function PromptsTab() {
               onClick={() => void handleTest()}
               disabled={testing || testProblem.trim().length < 10}
             >
-              {testing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Play className="size-3.5" />
-              )}
+              {testing ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
               {testing ? "Running test…" : "Run test"}
             </Button>
 
@@ -810,13 +822,13 @@ function PromptsTab() {
                     summary: testResult.summary,
                     causes: testResult.causes,
                     fixes: testResult.fixes,
-                    model: "test",
-                    totalTokens: testResult.tokens,
-                    inputTokens: 0,
-                    outputTokens: testResult.tokens,
-                    promptId: draftText.trim() ? "draft" : activePrompt ? `v${activePrompt.version}` : null,
-                    status: "success",
-                    errorMessage: null,
+                    model: "deepseek-chat (test)",
+                    promptLabel: draftText.trim() ? "draft" : activePrompt ? `v${activePrompt.version}` : null,
+                    tokens: {
+                      input: 0,
+                      output: testResult.tokens,
+                      total: testResult.tokens,
+                    },
                   }}
                 />
               </div>
@@ -825,7 +837,6 @@ function PromptsTab() {
         </Card>
       </div>
 
-      {/* Version history */}
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle className="text-base">Version history</CardTitle>
@@ -843,10 +854,10 @@ function PromptsTab() {
           ) : (
             prompts.map((p) => (
               <div
-                key={p._id}
+                key={p.id}
                 className={cn(
                   "rounded-xl border px-4 py-3",
-                  p.isActive ? "border-emerald-500/40 bg-emerald-500/5" : "border-border",
+                  p.is_active ? "border-emerald-500/40 bg-emerald-500/5" : "border-border",
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -855,10 +866,10 @@ function PromptsTab() {
                       v{p.version} · {p.name}
                     </p>
                     <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                      {p.promptText}
+                      {p.prompt_text}
                     </p>
                   </div>
-                  {p.isActive ? (
+                  {p.is_active ? (
                     <Badge
                       variant="outline"
                       className="shrink-0 border-emerald-500/40 text-emerald-700"
@@ -870,7 +881,7 @@ function PromptsTab() {
                       variant="outline"
                       size="sm"
                       className="shrink-0"
-                      onClick={() => void handleActivate(p._id)}
+                      onClick={() => void handleActivate(p.id)}
                     >
                       Activate
                     </Button>
@@ -886,17 +897,12 @@ function PromptsTab() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Settings: model, connection, system limits                          */
+/* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
 function SettingsTab() {
-  const settings = useQuery(api.admin.getApiSettings, {});
-  const system = useQuery(api.admin.getSystemSettings, {});
-  const updateApi = useMutation(api.admin.updateApiSettings);
-  const updateSetting = useMutation(api.admin.updateSystemSetting);
-  const testConnection = useAction(api.aiTest.testConnection);
-
-  const [savingModel, setSavingModel] = useState(false);
+  const [apiInfo, setApiInfo] = useState<Awaited<ReturnType<typeof getApiSettingsInfo>> | null>(null);
+  const [system, setSystem] = useState<Awaited<ReturnType<typeof getSystemSettings>> | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -904,31 +910,43 @@ function SettingsTab() {
     message: string;
     latencyMs?: number;
   } | null>(null);
-
   const [budgetValue, setBudgetValue] = useState("");
   const [outputValue, setOutputValue] = useState("");
   const [lengthValue, setLengthValue] = useState("");
 
-  const handleModelChange = async (model: string) => {
-    if (!settings) return;
-    setSavingModel(true);
+  const load = useCallback(async () => {
     try {
-      await updateApi({ model, isEnabled: settings.isEnabled });
-      toast.success(`Model set to ${model}`);
+      const [a, s] = await Promise.all([getApiSettingsInfo(), getSystemSettings()]);
+      setApiInfo(a);
+      setSystem(s);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update model");
-    } finally {
-      setSavingModel(false);
+      toast.error(error instanceof Error ? error.message : "Failed to load settings.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleModelChange = async (model: string) => {
+    if (!apiInfo) return;
+    try {
+      await adminUpdateApiSettings(model, apiInfo.isEnabled);
+      toast.success(`Model set to ${model}`);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update model.");
     }
   };
 
   const handleEnabledChange = async (isEnabled: boolean) => {
-    if (!settings) return;
+    if (!apiInfo) return;
     try {
-      await updateApi({ model: settings.model, isEnabled });
+      await adminUpdateApiSettings(apiInfo.model, isEnabled);
       toast.success(isEnabled ? "AI enabled" : "AI disabled");
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update");
+      toast.error(error instanceof Error ? error.message : "Failed to update.");
     }
   };
 
@@ -936,15 +954,12 @@ function SettingsTab() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await testConnection({});
+      const res = await adminTestConnection();
       setTestResult(res);
-      if (res.ok) {
-        toast.success("DeepSeek connection OK");
-      } else {
-        toast.error(res.message);
-      }
+      if (res.ok) toast.success("DeepSeek connection OK");
+      else toast.error(res.message);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Test failed");
+      toast.error(error instanceof Error ? error.message : "Test failed.");
     } finally {
       setTesting(false);
     }
@@ -961,21 +976,21 @@ function SettingsTab() {
       return;
     }
     try {
-      await updateSetting({ key, value });
+      await adminUpdateSetting(key, value);
       toast.success("Setting updated");
       clear();
+      await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update");
+      toast.error(error instanceof Error ? error.message : "Failed to update.");
     }
   };
 
-  if (settings === undefined || system === undefined) {
+  if (!apiInfo || !system) {
     return <Skeleton className="h-72 rounded-xl" />;
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {/* API settings */}
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -983,7 +998,7 @@ function SettingsTab() {
             DeepSeek configuration
           </CardTitle>
           <CardDescription>
-            The API key is stored server-side only and is never displayed.
+            The API key is a server-side secret and is never displayed.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -992,32 +1007,19 @@ function SettingsTab() {
               <KeyRound className="size-4 text-muted-foreground" />
               API key
             </div>
-            {settings.hasApiKeyConfigured ? (
-              <Badge
-                variant="outline"
-                className="border-emerald-500/40 text-emerald-700"
-              >
-                Configured
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="border-amber-500/40 text-amber-700">
-                Missing
-              </Badge>
-            )}
+            <Badge variant="outline" className="border-border text-muted-foreground">
+              Set via Supabase secrets
+            </Badge>
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="model-select">Model</Label>
-            <Select
-              value={settings.model}
-              onValueChange={(v) => void handleModelChange(v)}
-              disabled={savingModel}
-            >
+            <Select value={apiInfo.model} onValueChange={(v) => void handleModelChange(v)}>
               <SelectTrigger id="model-select" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {settings.availableModels.map((m) => (
+                {apiInfo.availableModels.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
                     {m.label}
                   </SelectItem>
@@ -1037,7 +1039,7 @@ function SettingsTab() {
             </div>
             <Switch
               id="ai-enabled"
-              checked={settings.isEnabled}
+              checked={apiInfo.isEnabled}
               onCheckedChange={(v) => void handleEnabledChange(v)}
             />
           </div>
@@ -1050,11 +1052,7 @@ function SettingsTab() {
               onClick={() => void handleTestConnection()}
               disabled={testing}
             >
-              {testing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Plug className="size-3.5" />
-              )}
+              {testing ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
               {testing ? "Testing…" : "Test connection"}
             </Button>
             {testResult && (
@@ -1073,8 +1071,7 @@ function SettingsTab() {
                 )}
                 <span>
                   {testResult.message}
-                  {testResult.latencyMs !== undefined &&
-                    ` (${testResult.latencyMs}ms)`}
+                  {testResult.latencyMs !== undefined && ` (${testResult.latencyMs}ms)`}
                 </span>
               </div>
             )}
@@ -1082,7 +1079,6 @@ function SettingsTab() {
         </CardContent>
       </Card>
 
-      {/* System settings */}
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -1100,7 +1096,7 @@ function SettingsTab() {
               key: "ai_token_budget" as const,
               label: "AI token budget",
               hint: "Hard total-token cap (default 20,000)",
-              current: system.aiTokenBudget,
+              current: system.budget,
               value: budgetValue,
               setValue: setBudgetValue,
             },
@@ -1155,10 +1151,8 @@ function SettingsTab() {
             </div>
           ))}
           <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground">
-            Rate limits (server-side only): {system.rateLimits.problemsPerHour}{" "}
-            problems/hour per user, minimum{" "}
-            {system.rateLimits.minIntervalSeconds}s between requests, and{" "}
-            20 prompt tests/hour for admins.
+            Rate limits (server-side): 10 problems/hour per user, minimum 5s
+            between requests, enforced inside the Edge Function.
           </p>
         </CardContent>
       </Card>
@@ -1171,7 +1165,7 @@ function SettingsTab() {
 /* ------------------------------------------------------------------ */
 
 export default function Admin() {
-  const navItems: NavItem[] = useNavItems();
+  const navItems = useNavItems();
 
   return (
     <AppShell navItems={navItems} badge="Admin">

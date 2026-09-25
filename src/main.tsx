@@ -7,8 +7,6 @@ import { useServiceWorkerRegistration } from "@/hooks/use-pwa";
 import { AuthProvider } from "@/lib/authProvider";
 import { ThemeProvider } from "next-themes";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -88,13 +86,10 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
-
 /*
- * Hybrid bridge during migration:
- *  - AuthProvider (Supabase): login, password auth, roles, sessions.
- *  - ConvexAuthProvider (Convex): data + AI pipeline functions until the
- *    Supabase data layer + Edge Functions replace them.
+ * Auth + data layer: Supabase (email/password auth, RLS-protected tables).
+ * The AI pipeline runs in a Supabase Edge Function (supabase/functions/
+ * quickfix-ai) which holds the DeepSeek key server-side.
  */
 
 /** Registers the PWA service worker and offers a refresh when an update is
@@ -147,7 +142,6 @@ createRoot(document.getElementById("root")!).render(
         <VlyToolbar />
       </ToolbarErrorBoundary>
       <AuthProvider>
-      <ConvexAuthProvider client={convex}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <BrowserRouter>
           <RouteSyncer />
@@ -199,7 +193,6 @@ createRoot(document.getElementById("root")!).render(
         </BrowserRouter>
         <Toaster />
         </ThemeProvider>
-      </ConvexAuthProvider>
       </AuthProvider>
     </RootErrorBoundary>
   </StrictMode>,

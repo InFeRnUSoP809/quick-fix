@@ -1,24 +1,20 @@
-import { useMemo } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/hooks/use-auth";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell, type NavItem } from "@/components/AppShell";
-import {
-  NewProblemForm,
-  HistoryRowCard,
-} from "@/components/problems";
+import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
+import { HistoryRowCard, NewProblemForm, ProblemDetailDialog } from "@/components/problems";
+import { listMyProblems, type MyProblemRow } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   History,
   LayoutDashboard,
   ListPlus,
+  RefreshCw,
   ShieldCheck,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
-import type { Id } from "@/convex/_generated/dataModel";
-import { ProblemDetailDialog } from "@/components/problems";
 
 export const USER_NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -28,28 +24,40 @@ export const USER_NAV: NavItem[] = [
 
 /**
  * Sidebar nav for the authenticated shell. Admins additionally get the
- * admin console entry — the route itself is still guarded by RequireAdmin
- * and every admin backend function re-checks the role server-side.
+ * admin console entry — the route itself is still guarded by RequireAdmin.
  */
 export function useNavItems(): NavItem[] {
   const { user } = useAuth();
   return useMemo(
     () =>
       user?.role === "admin"
-        ? [
-            ...USER_NAV,
-            { to: "/admin", label: "Admin console", icon: ShieldCheck },
-          ]
+        ? [...USER_NAV, { to: "/admin", label: "Admin console", icon: ShieldCheck }]
         : USER_NAV,
     [user?.role],
   );
 }
 
 export default function Dashboard() {
-  const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);
-  const history = useQuery(api.problems.listMine, { limit: 50 });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [rows, setRows] = useState<MyProblemRow[] | undefined>(undefined);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const recent = useMemo(() => (history ?? []).slice(0, 5), [history]);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setRows(await listMyProblems(50));
+    } catch {
+      setRows([]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const recent = useMemo(() => (rows ?? []).slice(0, 5), [rows]);
 
   return (
     <AppShell navItems={USER_NAV}>
@@ -67,15 +75,27 @@ export default function Dashboard() {
         </div>
 
         <section className="mt-10">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent problems
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Recent problems
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => void load()}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
           <div className="mt-4 space-y-2">
-            {history === undefined ? (
+            {rows === undefined ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-14 w-full rounded-xl" />
               ))
-            ) : history.length === 0 ? (
+            ) : rows.length === 0 ? (
               <Card className="border-dashed shadow-none">
                 <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
                   <Wrench className="size-5 text-muted-foreground/60" />
@@ -86,11 +106,7 @@ export default function Dashboard() {
               </Card>
             ) : (
               recent.map((row) => (
-                <HistoryRowCard
-                  key={row._id}
-                  row={row}
-                  onOpen={() => setSelectedId(row._id)}
-                />
+                <HistoryRowCard key={row.id} row={row} onOpen={() => setSelectedId(row.id)} />
               ))
             )}
           </div>
@@ -103,10 +119,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <ProblemDetailDialog
-        problemId={selectedId}
-        onClose={() => setSelectedId(null)}
-      />
+      <ProblemDetailDialog problemId={selectedId} onClose={() => setSelectedId(null)} />
     </AppShell>
   );
 }

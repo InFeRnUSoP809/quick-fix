@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+  createProblem,
+  getProblemWithResult,
+  listMyProblems,
+  runAiPipeline,
+  type MyProblemRow,
+} from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -29,30 +30,8 @@ import {
 export const MIN_PROBLEM_LEN = 10;
 export const FALLBACK_MAX_PROBLEM_LEN = 1000;
 
-export type ProblemStatus = "pending" | "processing" | "completed" | "failed";
-
-export interface HistoryRow {
-  _id: Id<"problems">;
-  problemText: string;
-  status: ProblemStatus;
-  createdAt: number;
-}
-
-export interface ProblemResult {
-  summary: string;
-  causes: string[];
-  fixes: string[];
-  model: string;
-  totalTokens: number;
-  inputTokens: number;
-  outputTokens: number;
-  promptId: string | null;
-  status: string;
-  errorMessage: string | null;
-}
-
-/** Friendly relative time label. */
-export function timeLabel(ts: number): string {
+function timeLabel(iso: string): string {
+  const ts = new Date(iso).getTime();
   const diff = Date.now() - ts;
   const minutes = Math.floor(diff / 60_000);
   if (minutes < 1) return "Just now";
@@ -71,41 +50,36 @@ export function timeLabel(ts: number): string {
 /* New problem form: input -> loading -> result dialog                 */
 /* ------------------------------------------------------------------ */
 
-export function NewProblemForm({ maxLength = FALLBACK_MAX_PROBLEM_LEN }: { maxLength?: number }) {
+export function NewProblemForm({
+  maxLength = FALLBACK_MAX_PROBLEM_LEN,
+}: {
+  maxLength?: number;
+}) {
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);
-
-  const createProblem = useMutation(api.problems.create);
-  // Actions run on the Node runtime (DeepSeek call) and are invoked via useAction.
-  const runProblem = useAction(api.ai.runProblem);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const charCount = text.length;
   const canSubmit =
-    text.trim().length >= MIN_PROBLEM_LEN &&
-    charCount <= maxLength &&
-    !submitting;
+    text.trim().length >= MIN_PROBLEM_LEN && charCount <= maxLength && !submitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      // 1) Create + validate server-side (rate limits, length, auth).
-      const { problemId } = await createProblem({ problemText: text });
-      // 2) Run the AI pipeline against the active prompt + budget.
-      const outcome = await runProblem({ problemId });
+      // 1) Create the problem row (RLS: owner-only insert).
+      const problemId = await createProblem(text.trim());
+      // 2) Run the AI pipeline (Edge Function: budget + DeepSeek + persist).
+      const outcome = await runAiPipeline(problemId, text.trim());
       if (outcome.ok) {
         toast.success("Quick Fix ready");
         setSelectedId(problemId);
         setText("");
       } else {
-        toast.error(outcome.error);
+        toast.error(outcome.error ?? "Something went wrong.");
       }
     } catch (error) {
-      // Server-side validation / rate limit errors land here with safe messages.
-      toast.error(
-        error instanceof Error ? error.message : "Something went wrong.",
-      );
+      toast.error(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
     }
@@ -127,18 +101,12 @@ export function NewProblemForm({ maxLength = FALLBACK_MAX_PROBLEM_LEN }: { maxLe
             <span
               className={cn(
                 "text-xs",
-                charCount > maxLength - 100
-                  ? "text-amber-600"
-                  : "text-muted-foreground",
+                charCount > maxLength - 100 ? "text-amber-600" : "text-muted-foreground",
               )}
             >
               {charCount.toLocaleString()} / {maxLength.toLocaleString()} characters
             </span>
-            <Button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className="gap-2 sm:min-w-44"
-            >
+            <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-2 sm:min-w-44">
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
@@ -161,10 +129,7 @@ export function NewProblemForm({ maxLength = FALLBACK_MAX_PROBLEM_LEN }: { maxLe
         </CardContent>
       </Card>
 
-      <ProblemDetailDialog
-        problemId={selectedId}
-        onClose={() => setSelectedId(null)}
-      />
+      <ProblemDetailDialog problemId={selectedId} onClose={() => setSelectedId(null)} />
     </>
   );
 }
@@ -177,7 +142,7 @@ export function HistoryRowCard({
   row,
   onOpen,
 }: {
-  row: HistoryRow;
+  row: MyProblemRow;
   onOpen: () => void;
 }) {
   const statusIcon =
@@ -196,9 +161,9 @@ export function HistoryRowCard({
       className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20"
     >
       {statusIcon}
-      <span className="min-w-0 flex-1 truncate text-sm">{row.problemText}</span>
+      <span className="min-w-0 flex-1 truncate text-sm">{row.problem_text}</span>
       <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-        {timeLabel(row.createdAt)}
+        {timeLabel(row.created_at)}
       </span>
       <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] capitalize text-muted-foreground">
         {row.status}
@@ -208,20 +173,33 @@ export function HistoryRowCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* Detail dialog (owner-scoped fetch via getWithResult)                */
+/* Detail dialog                                                       */
 /* ------------------------------------------------------------------ */
 
 export function ProblemDetailDialog({
   problemId,
   onClose,
 }: {
-  problemId: Id<"problems"> | null;
+  problemId: string | null;
   onClose: () => void;
 }) {
-  const detail = useQuery(
-    api.problems.getWithResult,
-    problemId ? { problemId } : "skip",
-  );
+  const [detail, setDetail] = useState<Awaited<
+    ReturnType<typeof getProblemWithResult>
+  > | undefined>(undefined);
+
+  const fetchDetail = useCallback(async () => {
+    if (!problemId) return;
+    setDetail(undefined);
+    try {
+      setDetail(await getProblemWithResult(problemId));
+    } catch {
+      setDetail(null);
+    }
+  }, [problemId]);
+
+  useEffect(() => {
+    if (problemId) void fetchDetail();
+  }, [problemId, fetchDetail]);
 
   return (
     <Dialog open={!!problemId} onOpenChange={(open) => !open && onClose()}>
@@ -233,18 +211,16 @@ export function ProblemDetailDialog({
             <Skeleton className="h-28 w-full" />
           </div>
         ) : detail === null ? (
-          <p className="py-6 text-sm text-muted-foreground">
-            Problem not found.
-          </p>
+          <p className="py-6 text-sm text-muted-foreground">Problem not found.</p>
         ) : (
           <>
             <DialogHeader>
               <DialogTitle className="text-base leading-6">
-                {detail.problemText}
+                {detail.problem_text}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-1.5 text-xs">
                 <Clock className="size-3" />
-                {timeLabel(detail.createdAt)} ·{" "}
+                {timeLabel(detail.created_at)} ·{" "}
                 {detail.status === "completed"
                   ? "Completed"
                   : detail.status === "failed"
@@ -254,13 +230,33 @@ export function ProblemDetailDialog({
             </DialogHeader>
 
             {detail.result ? (
-              detail.result.status === "success" ? (
-                <ResultBody result={detail.result} />
-              ) : (
+              detail.result.error_message ? (
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  {detail.result.errorMessage ?? "This request failed."}
+                  {detail.result.error_message}
                 </div>
+              ) : detail.result.summary ? (
+                <ResultBody
+                  result={{
+                    summary: detail.result.summary,
+                    causes: detail.result.causes,
+                    fixes: detail.result.fixes,
+                    model: detail.result.model,
+                    promptLabel:
+                      detail.result.prompt_version != null
+                        ? `v${detail.result.prompt_version}`
+                        : null,
+                    tokens: {
+                      input: detail.result.input_tokens,
+                      output: detail.result.output_tokens,
+                      total: detail.result.total_tokens,
+                    },
+                  }}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No AI result is attached to this problem yet.
+                </p>
               )
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -278,7 +274,18 @@ export function ProblemDetailDialog({
 /* Result rendering — safe text nodes only, never HTML injection       */
 /* ------------------------------------------------------------------ */
 
-export function ResultBody({ result }: { result: ProblemResult }) {
+export function ResultBody({
+  result,
+}: {
+  result: {
+    summary: string;
+    causes: string[];
+    fixes: string[];
+    model: string;
+    promptLabel: string | null;
+    tokens: { input: number; output: number; total: number };
+  };
+}) {
   return (
     <div className="mt-2 space-y-5">
       <div>
@@ -321,10 +328,10 @@ export function ResultBody({ result }: { result: ProblemResult }) {
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-muted-foreground">
         <span>Model: {result.model}</span>
-        <span>Prompt: {result.promptId ?? "—"}</span>
+        <span>Prompt: {result.promptLabel ?? "—"}</span>
         <span>
-          Tokens: {result.inputTokens} in / {result.outputTokens} out /{" "}
-          {result.totalTokens} total
+          Tokens: {result.tokens.input} in / {result.tokens.output} out /{" "}
+          {result.tokens.total} total
         </span>
       </div>
     </div>
