@@ -118,7 +118,10 @@ export default function History() {
                 try {
                   await deleteProblem(pendingDelete.id);
                   toast.success("Problem deleted");
+                  // Optimistic removal, then reconcile with the database so
+                  // history, dashboard and admin views all agree.
                   setRows((prev) => prev?.filter((r) => r.id !== pendingDelete.id));
+                  void load();
                 } catch (error) {
                   toast.error(
                     error instanceof Error ? error.message : "Failed to delete.",

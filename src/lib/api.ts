@@ -116,13 +116,28 @@ export async function getProblemWithResult(
 /* Problem creation + AI run                                           */
 /* ------------------------------------------------------------------ */
 
-/** Delete a problem. RLS: the owner or an admin may delete. */
+/**
+ * Delete a problem. RLS: the owner or an admin may delete.
+ *
+ * Postgres RLS silently blocks DELETEs that no policy permits: supabase-js
+ * resolves with NO error and 0 affected rows. We must therefore verify the
+ * row is actually gone — otherwise the UI lies (row reappears on refresh,
+ * admin still sees it) when the problems_delete policy is missing.
+ */
 export async function deleteProblem(problemId: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("problems")
     .delete()
-    .eq("id", problemId);
+    .eq("id", problemId)
+    .select("id");
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Delete was blocked by the database. The problems_delete policy is " +
+        "missing — an admin must run supabase/fix-delete.sql in the " +
+        "Supabase SQL Editor.",
+    );
+  }
 }
 
 export async function createProblem(text: string): Promise<string> {
