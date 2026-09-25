@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
 import { usePwaInstall } from "@/hooks/use-pwa";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { InstallAppButton } from "@/components/InstallAppButton";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,6 +80,7 @@ export default function Landing() {
             </span>
           </div>
           <nav className="flex items-center gap-2">
+            <InstallAppButton />
             <ThemeToggle />
             {!isLoading && isAuthenticated ? (
               <Button asChild size="sm">
@@ -131,7 +133,7 @@ export default function Landing() {
                   <ArrowRight className="ml-2 size-4" />
                 </Link>
               </Button>
-              {canInstall && (
+              {canInstall ? (
                 <Button
                   variant="outline"
                   size="lg"
@@ -140,6 +142,13 @@ export default function Landing() {
                 >
                   <Download className="mr-2 size-4" />
                   Install QuickFix
+                </Button>
+              ) : (
+                <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
+                  <a href="#how-to-install">
+                    <Download className="mr-2 size-4" />
+                    How to install
+                  </a>
                 </Button>
               )}
             </div>
@@ -294,6 +303,48 @@ export default function Landing() {
               </div>
             </div>
           </motion.div>
+        </div>
+      </section>
+
+      {/* Install guide */}
+      <section id="how-to-install" className="border-t border-border/60 bg-sidebar">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Install QuickFix AI on your device
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              It's a Progressive Web App — no app store needed.
+            </p>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {[
+              {
+                title: "iPhone / iPad",
+                body: "Open in Safari → tap the Share icon → “Add to Home Screen”.",
+              },
+              {
+                title: "Android / Chrome",
+                body: "Browser menu ⋮ → “Install app” or “Add to Home screen”.",
+              },
+              {
+                title: "Desktop",
+                body: "Chrome/Edge: install icon in the address bar, or menu → Install.",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-border bg-card p-5"
+              >
+                <h3 className="text-sm font-semibold tracking-tight">
+                  {item.title}
+                </h3>
+                <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+                  {item.body}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

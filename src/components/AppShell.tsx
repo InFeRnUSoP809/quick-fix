@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { InstallAppButton } from "@/components/InstallAppButton";
 import { LogOut, Menu, Wrench } from "lucide-react";
 
 export interface NavItem {
@@ -119,6 +120,7 @@ export function AppShell({
 
           <div className="flex-1" />
 
+          <InstallAppButton />
           <ThemeToggle />
 
           {user?.role === "admin" && (

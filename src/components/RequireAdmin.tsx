@@ -9,7 +9,11 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
-import { ShieldAlert } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { Loader2, ShieldAlert, UserCog } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -22,6 +26,25 @@ import type { ReactNode } from "react";
  */
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { isLoading, user } = useAuth();
+  const becomeFirstAdmin = useMutation(api.setup.becomeFirstAdmin);
+  const [claiming, setClaiming] = useState(false);
+
+  const handleClaimAdmin = async () => {
+    setClaiming(true);
+    try {
+      const res = await becomeFirstAdmin({});
+      if (res.ok) {
+        toast.success("You are now the admin. Reloading…");
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        toast.error(res.reason ?? "An admin already exists.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to claim admin");
+    } finally {
+      setClaiming(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -50,24 +73,43 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
               This console is only available to administrator accounts.
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center text-sm text-muted-foreground">
-            You are signed in as{" "}
-            <span className="font-medium text-foreground">
-              {user?.email ?? "a guest user"}
-            </span>
-            . If you believe you should have access, ask an existing admin to
-            grant the admin role to this account.
+          <CardContent className="space-y-3 text-center text-sm text-muted-foreground">
+            <p>
+              You are signed in as{" "}
+              <span className="font-medium text-foreground">
+                {user?.email ?? "a guest user"}
+              </span>
+              .
+            </p>
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5">
+              Setting up QuickFix AI for the first time? The first account can
+              claim the admin role here. Afterwards, admins grant the role to
+              others from the Users tab.
+            </p>
           </CardContent>
           <CardFooter className="flex-col gap-2">
             <Button className="w-full" onClick={() => window.history.back()}>
               Go back
             </Button>
             <Button
-              variant="ghost"
+              variant="outline"
               className="w-full"
               onClick={() => (window.location.href = "/dashboard")}
             >
               Open my dashboard
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full gap-1.5 text-muted-foreground"
+              onClick={() => void handleClaimAdmin()}
+              disabled={claiming}
+            >
+              {claiming ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <UserCog className="size-4" />
+              )}
+              Claim admin (first-time setup)
             </Button>
           </CardFooter>
         </Card>
