@@ -54,7 +54,7 @@ const principles = [
   {
     icon: ListChecks,
     title: "Concise by default",
-    body: "Every answer is exactly three likely causes and three practical fixes. No essays, no chat loops.",
+    body: "Every answer is exactly three likely causes and five practical fixes. No essays, no chat loops.",
   },
   {
     icon: Lightbulb,
@@ -122,7 +122,7 @@ export default function Landing() {
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
               Describe what's wrong. QuickFix AI returns a short summary, three
-              likely causes, and three practical fixes — in seconds.
+              likely causes, and five practical fixes — in seconds.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button asChild size="lg" className="w-full sm:w-auto">
@@ -243,7 +243,7 @@ export default function Landing() {
               {[
                 "Short summary of the likely situation",
                 "Exactly three likely causes",
-                "Exactly three practical fixes",
+                "Exactly five practical fixes",
                 "Saved to your history with model + prompt traceability",
               ].map((line) => (
                 <li key={line} className="flex items-start gap-2.5 text-sm">

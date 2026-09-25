@@ -53,12 +53,12 @@ Return valid JSON only:
 {
   "summary": "short summary",
   "causes": ["cause 1", "cause 2", "cause 3"],
-  "fixes": ["fix 1", "fix 2", "fix 3"]
+  "fixes": ["fix 1", "fix 2", "fix 3", "fix 4", "fix 5"]
 }
 
 Rules:
 - Exactly 3 causes.
-- Exactly 3 fixes.
+- Exactly 5 fixes.
 - Keep each cause and fix under 12 words.
 - Keep the summary under 30 words.
 - Do not invent facts.
