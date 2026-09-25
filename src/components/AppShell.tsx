@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { LogOut, Menu, Wrench } from "lucide-react";
 
 export interface NavItem {
@@ -117,6 +118,8 @@ export function AppShell({
           </Sheet>
 
           <div className="flex-1" />
+
+          <ThemeToggle />
 
           {user?.role === "admin" && (
             <span className="hidden rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground sm:inline">

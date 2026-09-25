@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
 import { usePwaInstall } from "@/hooks/use-pwa";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +79,7 @@ export default function Landing() {
             </span>
           </div>
           <nav className="flex items-center gap-2">
+            <ThemeToggle />
             {!isLoading && isAuthenticated ? (
               <Button asChild size="sm">
                 <Link to="/dashboard">

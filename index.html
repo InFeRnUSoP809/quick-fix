@@ -6,7 +6,7 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#1c1c1a" />
+  <meta name="theme-color" content="#059669" />
   <meta name="description"
     content="QuickFix AI — practical AI-powered solutions to everyday problems." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -19,6 +19,18 @@
     href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
   <title>QuickFix AI — Practical fixes for everyday problems</title>
+  <script>
+    // Apply the persisted theme before first paint to avoid a light flash
+    // when dark mode is active (works alongside next-themes).
+    (function () {
+      try {
+        var t = localStorage.getItem("theme");
+        if (t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
 

@@ -158,7 +158,7 @@
   .focus-ring:focus-visible {
     outline-color: var(--ring);
   }
-  /* Fine dotted grid backdrop for hero sections */
+  /* Fine dotted grid backdrop for hero sections (adapts to theme) */
   .bg-dotted {
     background-image: radial-gradient(
       oklch(0.205 0.006 106 / 6%),
@@ -166,5 +166,12 @@
       transparent 1px
     );
     background-size: 22px 22px;
+  }
+  .dark .bg-dotted {
+    background-image: radial-gradient(
+      oklch(0.97 0.002 106 / 7%),
+      oklch(0.97 0.002 106 / 7%) 1px,
+      transparent 1px
+    );
   }
 }
