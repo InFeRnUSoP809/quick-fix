@@ -1,3 +1,4 @@
+import { FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 /*
@@ -159,6 +160,34 @@ export async function createProblem(text: string): Promise<string> {
 }
 
 /**
+ * Edge Functions that answer with a non-2xx status throw FunctionsHttpError
+ * whose .message is the useless generic "Edge Function returned a non-2xx
+ * status code". The real, human-readable reason ({ ok:false, error }) is in
+ * the response body — unwrap it so users see the actual cause.
+ */
+export async function describeFunctionError(error: unknown): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload = (await error.context.json()) as {
+        error?: string;
+        message?: string;
+      };
+      if (payload?.error) return payload.error;
+      if (payload?.message) return payload.message;
+    } catch {
+      // Body wasn't JSON (e.g. platform-level text responses).
+    }
+    const status = error.context?.status;
+    if (status === 404) {
+      return "The quickfix-ai Edge Function is not deployed. Deploy it in the Supabase dashboard (Edge Functions), then try again.";
+    }
+    return `Edge Function request failed (HTTP ${status ?? "?"}).`;
+  }
+  if (error instanceof FunctionsRelayError) return error.message;
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+/**
  * Invokes the Supabase Edge Function that runs the AI pipeline:
  * validates the input, enforces the token budget, calls DeepSeek with the
  * server-held key, and persists request + response rows.
@@ -171,9 +200,8 @@ export async function runAiPipeline(
     body: { mode: "problem", problemId, problemText },
   });
   if (error) {
-    // EdgeFunction errors surface as EdgeFunctionError; the message is safe
-    // (our function returns human-readable messages only).
-    return { ok: false, error: error.message };
+    // Our function always returns human-readable, safe error messages.
+    return { ok: false, error: await describeFunctionError(error) };
   }
   return (data as { ok: boolean; error?: string }) ?? { ok: false, error: "No response." };
 }
@@ -188,7 +216,8 @@ export async function adminTestConnection(): Promise<{
   const { data, error } = await supabase.functions.invoke("quickfix-ai", {
     body: { mode: "test-connection" },
   });
-  if (error) return { ok: false, status: "error", message: error.message };
+  if (error)
+    return { ok: false, status: "error", message: await describeFunctionError(error) };
   return (data as { ok: boolean; status: string; message: string; latencyMs?: number }) ?? {
     ok: false,
     status: "error",
@@ -207,7 +236,7 @@ export async function adminTestPrompt(
   const { data, error } = await supabase.functions.invoke("quickfix-ai", {
     body: { mode: "test-prompt", problemText: problem, draftPromptText },
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: await describeFunctionError(error) };
   return data as { ok: true; result: { summary: string; causes: string[]; fixes: string[] }; tokens: number } | { ok: false; error: string };
 }
 
