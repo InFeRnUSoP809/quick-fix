@@ -75,6 +75,39 @@ function parseAiJson(raw: string): QuickFixResult {
   };
 }
 
+/**
+ * Reserve tokens before an AI call. Distinguishes "the budget RPC is missing
+ * or broken" (misconfiguration — must be reported) from a genuinely exhausted
+ * budget (a normal 429). Without this, a missing reserve_tokens() function
+ * surfaces as the misleading "budget exhausted" error even at zero usage.
+ * Returns null when the reservation succeeded.
+ */
+async function reserveBudget(
+  client: {
+    rpc: (
+      fn: string,
+      args: { p_amount: number },
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  },
+  estimate: number,
+): Promise<Response | null> {
+  const { data, error } = await client.rpc("reserve_tokens", { p_amount: estimate });
+  if (data === true) return null;
+  if (error) {
+    console.error("[quickfix-ai] reserve_tokens failed:", error.message);
+    return json(
+      {
+        ok: false,
+        error:
+          "Budget check failed: the reserve_tokens() SQL function is missing or broken. " +
+          "Run supabase/migration-step-2.sql in the Supabase SQL Editor.",
+      },
+      500,
+    );
+  }
+  return json({ ok: false, error: SAFE_ERRORS.budget }, 429);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -222,8 +255,8 @@ Deno.serve(async (req) => {
     if (!apiKey) return json({ ok: false, error: SAFE_ERRORS.no_key }, 500);
 
     const estimate = Math.ceil((testText.length + promptTextToUse.length) / 4) + 150;
-    const { data: reserved } = await supabaseAdmin.rpc("reserve_tokens", { p_amount: estimate });
-    if (reserved !== true) return json({ ok: false, error: SAFE_ERRORS.budget }, 429);
+    const budgetFailure = await reserveBudget(supabaseAdmin, estimate);
+    if (budgetFailure) return budgetFailure;
 
     try {
       const res = await fetch(DEEPSEEK_URL, {
@@ -345,13 +378,8 @@ Deno.serve(async (req) => {
   //      used + reserved + estimate <= budget, else reject.
   // ------------------------------------------------------------------
   const estimate = Math.ceil((text.length + promptText.length) / 4) + 150;
-  const { data: reserveData, error: reserveError } = await supabaseAdmin.rpc(
-    "reserve_tokens",
-    { p_amount: estimate },
-  );
-  if (reserveError || reserveData !== true) {
-    return json({ ok: false, error: SAFE_ERRORS.budget }, 429);
-  }
+  const budgetFailure = await reserveBudget(supabaseAdmin, estimate);
+  if (budgetFailure) return budgetFailure;
 
   // ------------------------------------------------------------------
   // 7. Call DeepSeek (server-held key; 45s timeout).
