@@ -1,12 +1,12 @@
 // Supabase Edge Function: quickfix-ai
 //
-// The secure server-side AI pipeline (the "FastAPI" of this architecture):
+// The secure server-side AI pipeline:
 //   auth -> validate -> rate limit -> budget reserve -> load prompt ->
 //   DeepSeek -> validate JSON -> settle budget -> persist request/response
 //
-// Deploy:
-//   supabase functions deploy quickfix-ai
-//   supabase secrets set DEEPSEEK_API_KEY=sk-...
+// Deploy: paste into the Supabase dashboard Edge Function editor (or
+//   supabase functions deploy quickfix-ai) and set the secret:
+//   DEEPSEEK_API_KEY=sk-...
 //
 // The DeepSeek key lives ONLY in this function's environment — the browser
 // never sees it. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are auto-injected
@@ -374,8 +374,7 @@ Deno.serve(async (req) => {
 
   // ------------------------------------------------------------------
   // 6. Budget: reserve estimate BEFORE calling DeepSeek (two-phase).
-  //    Atomic SQL functions (see supabase/migration-budget.sql):
-  //      used + reserved + estimate <= budget, else reject.
+  //    Atomic SQL functions (see supabase/migration-step-2.sql).
   // ------------------------------------------------------------------
   const estimate = Math.ceil((text.length + promptText.length) / 4) + 150;
   const budgetFailure = await reserveBudget(supabaseAdmin, estimate);

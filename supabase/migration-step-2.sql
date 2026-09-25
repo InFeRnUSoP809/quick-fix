@@ -3,8 +3,13 @@
 --
 -- Adds:
 --   1. Atomic budget functions (reserve/settle/refund/reset)
+--      NOTE: computed in PL/pgSQL variables — an unqualified `value` inside
+--      ON CONFLICT DO UPDATE is ambiguous against `excluded` (SQLSTATE 42702),
+--      which used to make reserve_tokens fail at runtime and mask itself as
+--      "AI usage limit reached" at zero usage.
 --   2. Admin RPCs for prompts, API settings, system settings
 --   3. A guard trigger so non-admins can never change roles
+--   4. The problems_delete policy (owner or admin may delete)
 --
 -- Idempotent: safe to run again.
 -- ============================================================================
@@ -14,33 +19,42 @@
 -- ---------------------------------------------------------------------------
 
 -- Reserve tokens BEFORE a DeepSeek call. Returns true when reserved.
-create or replace function public.reserve_tokens(p_amount integer)
+drop function if exists public.reserve_tokens(integer);
+create function public.reserve_tokens(p_amount integer)
 returns boolean
 language plpgsql
 security definer set search_path = public
 as $$
 declare
   budget_value integer;
-  used_value integer;
+  used_value   integer;
 begin
+  if p_amount is null or p_amount < 0 then
+    p_amount := 0;
+  end if;
+
   select coalesce(
-    (select (value #>> '{}')::integer from public.system_settings where key = 'ai_token_budget'),
+    (select (s.value #>> '{}')::integer from public.system_settings s where s.key = 'ai_token_budget'),
     20000
   ) into budget_value;
 
   select coalesce(
-    (select (value #>> '{}')::integer from public.system_settings where key = 'ai_tokens_used'),
+    (select (s.value #>> '{}')::integer from public.system_settings s where s.key = 'ai_tokens_used'),
     0
   ) into used_value;
 
-  if used_value + p_amount > budget_value then
+  -- Compute the new counter entirely in a variable (avoids the 42702
+  -- ambiguity between the target row and `excluded.value`).
+  used_value := used_value + p_amount;
+
+  if used_value > budget_value then
     return false;
   end if;
 
   insert into public.system_settings (key, value)
-  values ('ai_tokens_used', to_jsonb(p_amount))
+  values ('ai_tokens_used', to_jsonb(used_value))
   on conflict (key) do update
-    set value = to_jsonb((value #>> '{}')::integer + p_amount),
+    set value = excluded.value,
         updated_at = now();
 
   return true;
@@ -48,28 +62,32 @@ end;
 $$;
 
 -- Replace the reservation with the ACTUAL usage reported by DeepSeek.
-create or replace function public.settle_tokens(p_reserved integer, p_actual integer)
+drop function if exists public.settle_tokens(integer, integer);
+create function public.settle_tokens(p_reserved integer, p_actual integer)
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 begin
   update public.system_settings
-  set value = to_jsonb(greatest(0, (value #>> '{}')::integer - p_reserved + p_actual)),
+  set value = to_jsonb(greatest(0,
+        coalesce((system_settings.value #>> '{}')::integer, 0) - p_reserved + p_actual)),
       updated_at = now()
   where key = 'ai_tokens_used';
 end;
 $$;
 
 -- Release a reservation (the call failed or was never made).
-create or replace function public.refund_tokens(p_amount integer)
+drop function if exists public.refund_tokens(integer);
+create function public.refund_tokens(p_amount integer)
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 begin
   update public.system_settings
-  set value = to_jsonb(greatest(0, (value #>> '{}')::integer - p_amount)),
+  set value = to_jsonb(greatest(0,
+        coalesce((system_settings.value #>> '{}')::integer, 0) - p_amount)),
       updated_at = now()
   where key = 'ai_tokens_used';
 end;
@@ -233,7 +251,7 @@ create trigger profiles_guard
 
 -- ---------------------------------------------------------------------------
 -- 4. Delete policy: the owner (or an admin) may delete their problems.
---    (ai_requests/ai_responses cascade via foreign keys.)
+--    (ai_requests/ai_responses cascade/set-null via foreign keys.)
 -- ---------------------------------------------------------------------------
 drop policy if exists problems_delete on public.problems;
 create policy problems_delete on public.problems
