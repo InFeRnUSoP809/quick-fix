@@ -71,7 +71,7 @@ function parseAiJson(raw: string): QuickFixResult {
   return {
     summary: parsed.summary.trim(),
     causes: strings(parsed.causes).slice(0, 3),
-    fixes: strings(parsed.fixes).slice(0, 3),
+    fixes: strings(parsed.fixes).slice(0, 5),
   };
 }
 
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
             { role: "user", content: `Problem:\n${testText}` },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 300,
+          max_tokens: 500,
           temperature: 0.3,
           stream: false,
         }),
@@ -410,7 +410,7 @@ Deno.serve(async (req) => {
           { role: "user", content: `Problem:\n${text}` },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 300,
+        max_tokens: 500,
         temperature: 0.3,
         stream: false,
       }),

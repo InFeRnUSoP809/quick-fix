@@ -150,7 +150,7 @@ create table if not exists public.system_settings (
 -- Seed the defaults.
 insert into public.system_settings (key, value) values
   ('ai_token_budget', '20000'),
-  ('max_output_tokens', '300'),
+  ('max_output_tokens', '500'),
   ('max_problem_length', '1000')
 on conflict (key) do nothing;
 
@@ -166,12 +166,12 @@ Return valid JSON only:
 {
   "summary": "short summary",
   "causes": ["cause 1", "cause 2", "cause 3"],
-  "fixes": ["fix 1", "fix 2", "fix 3"]
+  "fixes": ["fix 1", "fix 2", "fix 3", "fix 4", "fix 5"]
 }
 
 Rules:
 - Exactly 3 causes.
-- Exactly 3 fixes.
+- Exactly 5 fixes.
 - Keep each cause and fix under 12 words.
 - Keep the summary under 30 words.
 - Do not invent facts.

@@ -81,7 +81,7 @@ export default function Dashboard() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Describe it in a sentence or two — you'll get three likely causes and
-          three practical fixes.
+          five practical fixes.
         </p>
 
         <div className="mt-6">
