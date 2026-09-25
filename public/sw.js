@@ -6,7 +6,7 @@
  * Convex/auth traffic is network-only and pass-through.
  */
 
-const VERSION = "v5";
+const VERSION = "v6";
 const APP_SHELL_CACHE = `quickfix-shell-${VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
@@ -25,8 +25,11 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(APP_SHELL_CACHE);
-      // Cache the offline page eagerly; other entries are best-effort.
-      await cache.add(OFFLINE_URL).catch(() => {});
+      // Pre-cache the app shell + PWA icons eagerly (icons must be cached
+      // before the install prompt criteria are evaluated).
+      await Promise.all(
+        PRECACHE_URLS.map((url) => cache.add(url).catch(() => {})),
+      );
       self.skipWaiting();
     })(),
   );

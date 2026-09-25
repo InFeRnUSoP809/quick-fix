@@ -3,7 +3,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -13,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import logo from "@/assets/logo.svg";
-import { ArrowRight, Eye, EyeOff, Loader2, UserX } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -32,7 +31,7 @@ function resolveRedirectAfterAuth(
 }
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
-  const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = resolveRedirectAfterAuth(
@@ -71,38 +70,24 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setIsLoading(true);
     setError(null);
     try {
-      // Convex Auth's Password provider handles both flows:
-      //  - "signUp" creates the account (fails if the email already exists)
-      //  - "signIn" verifies the password (fails on wrong email/password)
-      await signIn("password", {
-        email,
-        password,
-        flow: mode === "signUp" ? "signUp" : "signIn",
-      });
+      if (mode === "signUp") {
+        await signUp(email, password);
+      } else {
+        await signIn(email, password);
+      }
       navigate(redirect);
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
-      // Map raw provider errors to friendly, honest messages.
-      if (/already|exists/i.test(raw)) {
+      // Supabase error mapping → friendly, honest messages.
+      if (/already registered/i.test(raw)) {
         setError("An account with this email already exists. Try signing in.");
-      } else if (/secret|password/i.test(raw)) {
+      } else if (/invalid login|email not confirmed/i.test(raw)) {
         setError("Incorrect email or password.");
+      } else if (/rate limit/i.test(raw)) {
+        setError("Too many attempts. Please wait a minute and try again.");
       } else {
-        setError("Sign-in failed. Please check your details and try again.");
+        setError(raw || "Sign-in failed. Please check your details and try again.");
       }
-      setIsLoading(false);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await signIn("anonymous");
-      navigate(redirect);
-    } catch (err) {
-      console.error("Guest login error:", err);
-      setError("Guest sign-in failed. Please try again.");
       setIsLoading(false);
     }
   };
@@ -116,7 +101,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
       {/* Auth Content */}
       <div className="flex-1 flex items-center justify-center px-4 pb-10">
-        <Card className="w-full max-w-sm pb-0 border shadow-md">
+        <Card className="w-full max-w-sm border shadow-md">
           <CardHeader className="text-center">
             <div className="flex justify-center">
               <img
@@ -155,20 +140,17 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Input
-                    id="email"
-                    name="email"
-                    placeholder="name@example.com"
-                    type="email"
-                    autoComplete="email"
-                    className="pl-3"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isLoading}
-                    required
-                  />
-                </div>
+                <Input
+                  id="email"
+                  name="email"
+                  placeholder="name@example.com"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
+                  required
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -194,11 +176,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     onClick={() => setShowPassword((s) => !s)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {showPassword ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
               </div>
@@ -208,34 +186,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <ArrowRight className="ml-1 size-4" />
-                )}
+                ) : null}
                 {mode === "signUp" ? "Create account" : "Sign in"}
+                {!isLoading && <ArrowRight className="ml-1 size-4" />}
               </Button>
-
-              <div className="relative py-1">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">Or</span>
-                </div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={handleGuestLogin}
-                disabled={isLoading}
-              >
-                <UserX className="mr-2 size-4" />
-                Continue as guest
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Guests can look around but need a full account to use AI fixes.
-              </p>
             </CardContent>
           </form>
         </Card>

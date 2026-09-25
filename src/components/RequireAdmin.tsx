@@ -9,42 +9,18 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
-import { api } from "@/convex/_generated/api";
-import { useMutation } from "convex/react";
-import { toast } from "sonner";
-import { Loader2, ShieldAlert, UserCog } from "lucide-react";
-import { useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
  * Wraps a route that requires an ADMIN user.
  *
- * Must be rendered inside <RequireAuth> so the caller is signed in first —
- * this guard only handles the role check. Authorization is ALWAYS re-checked
- * server-side (every admin Convex function calls requireAdmin), so this UI
- * guard is a convenience, not the security boundary.
+ * The role comes from the Supabase `profiles` table (promoted automatically
+ * for the first signed-up user by the schema trigger). Server-side functions
+ * must still re-verify the role — this guard is a UX layer, not the boundary.
  */
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { isLoading, user } = useAuth();
-  const becomeFirstAdmin = useMutation(api.setup.becomeFirstAdmin);
-  const [claiming, setClaiming] = useState(false);
-
-  const handleClaimAdmin = async () => {
-    setClaiming(true);
-    try {
-      const res = await becomeFirstAdmin({});
-      if (res.ok) {
-        toast.success("You are now the admin. Reloading…");
-        setTimeout(() => window.location.reload(), 800);
-      } else {
-        toast.error(res.reason ?? "An admin already exists.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to claim admin");
-    } finally {
-      setClaiming(false);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -82,9 +58,12 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
               .
             </p>
             <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-5">
-              Setting up QuickFix AI for the first time? The first account can
-              claim the admin role here. Afterwards, admins grant the role to
-              others from the Users tab.
+              Setting up for the first time? The <strong>first account</strong>{" "}
+              registered is promoted to admin automatically. If that wasn't you,
+              ask an existing admin to change your role in the Users tab, or run
+              an UPDATE on{" "}
+              <code className="font-mono">public.profiles</code> in the Supabase
+              SQL editor.
             </p>
           </CardContent>
           <CardFooter className="flex-col gap-2">
@@ -97,19 +76,6 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
               onClick={() => (window.location.href = "/dashboard")}
             >
               Open my dashboard
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full gap-1.5 text-muted-foreground"
-              onClick={() => void handleClaimAdmin()}
-              disabled={claiming}
-            >
-              {claiming ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <UserCog className="size-4" />
-              )}
-              Claim admin (first-time setup)
             </Button>
           </CardFooter>
         </Card>

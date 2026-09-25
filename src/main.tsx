@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { useServiceWorkerRegistration } from "@/hooks/use-pwa";
+import { AuthProvider } from "@/lib/authProvider";
 import { ThemeProvider } from "next-themes";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
@@ -89,6 +90,13 @@ class RootErrorBoundary extends React.Component<
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
+/*
+ * Hybrid bridge during migration:
+ *  - AuthProvider (Supabase): login, password auth, roles, sessions.
+ *  - ConvexAuthProvider (Convex): data + AI pipeline functions until the
+ *    Supabase data layer + Edge Functions replace them.
+ */
+
 /** Registers the PWA service worker and offers a refresh when an update is
  *  waiting (build prompt #54: installable PWA with a real service worker). */
 function ServiceWorkerManager() {
@@ -138,6 +146,7 @@ createRoot(document.getElementById("root")!).render(
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
+      <AuthProvider>
       <ConvexAuthProvider client={convex}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <BrowserRouter>
@@ -191,6 +200,7 @@ createRoot(document.getElementById("root")!).render(
         <Toaster />
         </ThemeProvider>
       </ConvexAuthProvider>
+      </AuthProvider>
     </RootErrorBoundary>
   </StrictMode>,
 );
