@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,7 +10,8 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -20,7 +22,8 @@ import type { ReactNode } from "react";
  * must still re-verify the role — this guard is a UX layer, not the boundary.
  */
 export function RequireAdmin({ children }: { children: ReactNode }) {
-  const { isLoading, user } = useAuth();
+  const { isLoading, user, refreshRole } = useAuth();
+  const [checking, setChecking] = useState(false);
 
   if (isLoading) {
     return (
@@ -67,11 +70,30 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
             </p>
           </CardContent>
           <CardFooter className="flex-col gap-2">
+            <Button
+              variant="outline"
+              className="w-full gap-1.5"
+              onClick={async () => {
+                setChecking(true);
+                try {
+                  await refreshRole();
+                  // Component re-renders automatically if the role changed;
+                  // if still not admin, give explicit feedback.
+                  setTimeout(() => setChecking(false), 600);
+                } catch {
+                  setChecking(false);
+                }
+              }}
+              disabled={checking}
+            >
+              <RefreshCw className={cn("size-4", checking && "animate-spin")} />
+              Re-check my role
+            </Button>
             <Button className="w-full" onClick={() => window.history.back()}>
               Go back
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               className="w-full"
               onClick={() => (window.location.href = "/dashboard")}
             >

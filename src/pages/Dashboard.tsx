@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { deleteProblem } from "@/lib/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { HistoryRowCard, NewProblemForm, ProblemDetailDialog } from "@/components/problems";
 import { listMyProblems, type MyProblemRow } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +53,8 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rows, setRows] = useState<MyProblemRow[] | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<MyProblemRow | null>(null);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -106,7 +120,13 @@ export default function Dashboard() {
               </Card>
             ) : (
               recent.map((row) => (
-                <HistoryRowCard key={row.id} row={row} onOpen={() => setSelectedId(row.id)} />
+                <HistoryRowCard
+                  key={row.id}
+                  row={row}
+                  onOpen={() => setSelectedId(row.id)}
+                  onDelete={() => setPendingDelete(row)}
+                  deleting={deletingId === row.id}
+                />
               ))
             )}
           </div>
@@ -120,6 +140,47 @@ export default function Dashboard() {
       </div>
 
       <ProblemDetailDialog problemId={selectedId} onClose={() => setSelectedId(null)} />
+
+      <AlertDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this problem?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "
+              {pendingDelete?.problem_text.slice(0, 80)}
+              {pendingDelete && pendingDelete.problem_text.length > 80 ? "…" : ""}" and
+              its AI result will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                if (!pendingDelete) return;
+                setDeletingId(pendingDelete.id);
+                try {
+                  await deleteProblem(pendingDelete.id);
+                  toast.success("Problem deleted");
+                  setRows((prev) => prev?.filter((r) => r.id !== pendingDelete.id));
+                } catch (error) {
+                  toast.error(
+                    error instanceof Error ? error.message : "Failed to delete.",
+                  );
+                } finally {
+                  setDeletingId(null);
+                  setPendingDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   );
 }

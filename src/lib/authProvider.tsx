@@ -25,6 +25,7 @@ interface AuthValue {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshRole: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -130,6 +131,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: async () => {
         await supabase.auth.signOut();
         setUser(null);
+      },
+      refreshRole: async () => {
+        // Re-read the profile from the database. Used by the admin block
+        // screen so a newly-promoted admin gets access without re-login.
+        const { data } = await supabase.auth.getUser();
+        const uid = data.user?.id;
+        if (!uid) return;
+        const fresh = await loadProfile(uid, data.user?.email ?? null);
+        setUser(fresh);
       },
     }),
     [user, isLoading],

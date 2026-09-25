@@ -230,3 +230,11 @@ drop trigger if exists profiles_guard on public.profiles;
 create trigger profiles_guard
   before update on public.profiles
   for each row execute function public.protect_profiles();
+
+-- ---------------------------------------------------------------------------
+-- 4. Delete policy: the owner (or an admin) may delete their problems.
+--    (ai_requests/ai_responses cascade via foreign keys.)
+-- ---------------------------------------------------------------------------
+drop policy if exists problems_delete on public.problems;
+create policy problems_delete on public.problems
+  for delete using (user_id = auth.uid() or public.is_admin());

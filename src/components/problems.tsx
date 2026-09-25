@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   createProblem,
+  deleteProblem,
   getProblemWithResult,
   listMyProblems,
   runAiPipeline,
@@ -25,6 +26,7 @@ import {
   Clock,
   Loader2,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 export const MIN_PROBLEM_LEN = 10;
@@ -141,9 +143,13 @@ export function NewProblemForm({
 export function HistoryRowCard({
   row,
   onOpen,
+  onDelete,
+  deleting,
 }: {
   row: MyProblemRow;
   onOpen: () => void;
+  onDelete?: () => void;
+  deleting?: boolean;
 }) {
   const statusIcon =
     row.status === "completed" ? (
@@ -155,20 +161,38 @@ export function HistoryRowCard({
     );
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/20"
-    >
-      {statusIcon}
-      <span className="min-w-0 flex-1 truncate text-sm">{row.problem_text}</span>
-      <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-        {timeLabel(row.created_at)}
-      </span>
-      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] capitalize text-muted-foreground">
-        {row.status}
-      </span>
-    </button>
+    <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-foreground/20">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        {statusIcon}
+        <span className="min-w-0 flex-1 truncate text-sm">{row.problem_text}</span>
+        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+          {timeLabel(row.created_at)}
+        </span>
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] capitalize text-muted-foreground">
+          {row.status}
+        </span>
+      </button>
+      {onDelete && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Delete problem"
+          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Trash2 className="size-4" />
+          )}
+        </Button>
+      )}
+    </div>
   );
 }
 

@@ -116,6 +116,15 @@ export async function getProblemWithResult(
 /* Problem creation + AI run                                           */
 /* ------------------------------------------------------------------ */
 
+/** Delete a problem. RLS: the owner or an admin may delete. */
+export async function deleteProblem(problemId: string): Promise<void> {
+  const { error } = await supabase
+    .from("problems")
+    .delete()
+    .eq("id", problemId);
+  if (error) throw error;
+}
+
 export async function createProblem(text: string): Promise<string> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
