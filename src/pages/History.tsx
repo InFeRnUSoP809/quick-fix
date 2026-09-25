@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { AppShell, USER_NAV } from "@/pages/Dashboard";
+import { AppShell } from "@/components/AppShell";
+import { useNavItems } from "@/pages/Dashboard";
 import {
   HistoryRowCard,
   ProblemDetailDialog,
@@ -14,9 +15,10 @@ import { History as HistoryIcon } from "lucide-react";
 export default function History() {
   const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);
   const history = useQuery(api.problems.listMine, { limit: 100 });
+  const navItems = useNavItems();
 
   return (
-    <AppShell navItems={USER_NAV}>
+    <AppShell navItems={navItems}>
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">My history</h1>
         <p className="mt-1 text-sm text-muted-foreground">

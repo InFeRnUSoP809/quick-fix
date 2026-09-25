@@ -1,6 +1,9 @@
 import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { RequireAuth } from "@/components/RequireAuth";
+import { RequireAdmin } from "@/components/RequireAdmin";
+import { useServiceWorkerRegistration } from "@/hooks/use-pwa";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
@@ -13,6 +16,9 @@ import "./index.css";
 const Landing = lazy(() => import("./pages/Landing.tsx"));
 const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const NewProblem = lazy(() => import("./pages/NewProblem.tsx"));
+const HistoryPage = lazy(() => import("./pages/History.tsx"));
+const Admin = lazy(() => import("./pages/Admin.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -82,6 +88,23 @@ class RootErrorBoundary extends React.Component<
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
+/** Registers the PWA service worker and offers a refresh when an update is
+ *  waiting (build prompt #54: installable PWA with a real service worker). */
+function ServiceWorkerManager() {
+  const { updateReady, applyUpdate } = useServiceWorkerRegistration();
+
+  useEffect(() => {
+    if (!updateReady) return;
+    toast.info("A new version of QuickFix AI is ready", {
+      description: "Refresh to load the latest version.",
+      duration: Infinity,
+      action: { label: "Refresh", onClick: () => applyUpdate() },
+    });
+  }, [updateReady, applyUpdate]);
+
+  return null;
+}
+
 
 
 function RouteSyncer() {
@@ -117,6 +140,7 @@ createRoot(document.getElementById("root")!).render(
       <ConvexAuthProvider client={convex}>
         <BrowserRouter>
           <RouteSyncer />
+          <ServiceWorkerManager />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -129,6 +153,32 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Dashboard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/dashboard/new"
+                element={
+                  <RequireAuth>
+                    <NewProblem />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/dashboard/history"
+                element={
+                  <RequireAuth>
+                    <HistoryPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <RequireAuth redirectImmediately>
+                    <RequireAdmin>
+                      <Admin />
+                    </RequireAdmin>
                   </RequireAuth>
                 }
               />

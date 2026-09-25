@@ -6,7 +6,7 @@
  * Convex/auth traffic is network-only and pass-through.
  */
 
-const VERSION = "v3";
+const VERSION = "v4";
 const APP_SHELL_CACHE = `quickfix-shell-${VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
@@ -43,6 +43,12 @@ self.addEventListener("activate", (event) => {
       await self.clients.claim();
     })(),
   );
+});
+
+// Support the in-app "Refresh" action when a new version is waiting
+// (see useServiceWorkerRegistration in src/hooks/use-pwa.ts).
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

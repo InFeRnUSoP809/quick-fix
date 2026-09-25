@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useAuth } from "@/hooks/use-auth";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import {
   NewProblemForm,
@@ -24,6 +25,25 @@ export const USER_NAV: NavItem[] = [
   { to: "/dashboard/new", label: "New Problem", icon: ListPlus },
   { to: "/dashboard/history", label: "History", icon: History },
 ];
+
+/**
+ * Sidebar nav for the authenticated shell. Admins additionally get the
+ * admin console entry — the route itself is still guarded by RequireAdmin
+ * and every admin backend function re-checks the role server-side.
+ */
+export function useNavItems(): NavItem[] {
+  const { user } = useAuth();
+  return useMemo(
+    () =>
+      user?.role === "admin"
+        ? [
+            ...USER_NAV,
+            { to: "/admin", label: "Admin console", icon: ShieldCheck },
+          ]
+        : USER_NAV,
+    [user?.role],
+  );
+}
 
 export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);

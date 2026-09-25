@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -77,8 +77,8 @@ export function NewProblemForm({ maxLength = FALLBACK_MAX_PROBLEM_LEN }: { maxLe
   const [selectedId, setSelectedId] = useState<Id<"problems"> | null>(null);
 
   const createProblem = useMutation(api.problems.create);
-  // Actions are invoked through useMutation on the client.
-  const runProblem = useMutation(api.ai.runProblem);
+  // Actions run on the Node runtime (DeepSeek call) and are invoked via useAction.
+  const runProblem = useAction(api.ai.runProblem);
 
   const charCount = text.length;
   const canSubmit =
