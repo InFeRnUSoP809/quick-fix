@@ -5,6 +5,8 @@
 --   1. Atomic budget functions (reserve/settle/refund/reset)
 --   2. Admin RPCs for prompts, API settings, system settings
 --   3. A guard trigger so non-admins can never change roles
+--
+-- Idempotent: safe to run again.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -12,8 +14,6 @@
 -- ---------------------------------------------------------------------------
 
 -- Reserve tokens BEFORE a DeepSeek call. Returns true when reserved.
--- Atomic: the cap is re-checked inside the update, so concurrent calls can
--- never overshoot the budget.
 create or replace function public.reserve_tokens(p_amount integer)
 returns boolean
 language plpgsql
@@ -23,17 +23,25 @@ declare
   budget_value integer;
   used_value integer;
 begin
-  select coalesce((select (value)::integer from public.system_settings where key = 'ai_token_budget'), 20000)
-    into budget_value;
-  select coalesce((select (value)::integer from public.system_settings where key = 'ai_tokens_used'), 0)
-    into used_value;
+  select coalesce(
+    (select (value #>> '{}')::integer from public.system_settings where key = 'ai_token_budget'),
+    20000
+  ) into budget_value;
+
+  select coalesce(
+    (select (value #>> '{}')::integer from public.system_settings where key = 'ai_tokens_used'),
+    0
+  ) into used_value;
 
   if used_value + p_amount > budget_value then
     return false;
   end if;
 
-  insert into public.system_settings (key, value) values ('ai_tokens_used', p_amount)
-  on conflict (key) do update set value = (value)::integer + p_amount, updated_at = now();
+  insert into public.system_settings (key, value)
+  values ('ai_tokens_used', to_jsonb(p_amount))
+  on conflict (key) do update
+    set value = to_jsonb((value #>> '{}')::integer + p_amount),
+        updated_at = now();
 
   return true;
 end;
@@ -47,7 +55,7 @@ security definer set search_path = public
 as $$
 begin
   update public.system_settings
-  set value = greatest(0, (value)::integer - p_reserved + p_actual),
+  set value = to_jsonb(greatest(0, (value #>> '{}')::integer - p_reserved + p_actual)),
       updated_at = now()
   where key = 'ai_tokens_used';
 end;
@@ -61,7 +69,7 @@ security definer set search_path = public
 as $$
 begin
   update public.system_settings
-  set value = greatest(0, (value)::integer - p_amount),
+  set value = to_jsonb(greatest(0, (value #>> '{}')::integer - p_amount)),
       updated_at = now()
   where key = 'ai_tokens_used';
 end;
@@ -78,8 +86,9 @@ begin
     raise exception 'FORBIDDEN';
   end if;
   insert into public.system_settings (key, value)
-  values ('ai_tokens_used', greatest(0, p_used))
-  on conflict (key) do update set value = greatest(0, p_used), updated_at = now();
+  values ('ai_tokens_used', to_jsonb(greatest(0, p_used)))
+  on conflict (key) do update
+    set value = to_jsonb(greatest(0, p_used)), updated_at = now();
 end;
 $$;
 
@@ -190,13 +199,15 @@ begin
     raise exception 'Value must be between % and %.', v_min, v_max;
   end if;
 
-  insert into public.system_settings (key, value) values (p_key, p_value)
-  on conflict (key) do update set value = excluded.value, updated_at = now();
+  insert into public.system_settings (key, value)
+  values (p_key, to_jsonb(p_value))
+  on conflict (key) do update
+    set value = to_jsonb(p_value), updated_at = now();
 end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. Security: only admins may change roles (fixes self-promotion hole)
+-- 3. Security: only admins may change roles
 -- ---------------------------------------------------------------------------
 
 create or replace function public.protect_profiles()
