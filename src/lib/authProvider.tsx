@@ -29,12 +29,35 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-async function loadProfile(userId: string): Promise<AuthUser | null> {
-  const { data } = await supabase
+/**
+ * Loads the profile row for a signed-in auth user. Self-heals the case where
+ * the user registered before the schema (and its profile trigger) existed:
+ * if no row is found, one is upserted — and the promote_first_admin trigger
+ * fires on that insert, so a legitimate first user still becomes admin.
+ */
+async function loadProfile(
+  userId: string,
+  email: string | null,
+): Promise<AuthUser | null> {
+  let { data } = await supabase
     .from("profiles")
     .select("id, email, name, role")
     .eq("id", userId)
     .maybeSingle();
+
+  if (!data) {
+    // Profile missing (pre-schema signup): create it now.
+    await supabase
+      .from("profiles")
+      .upsert({ id: userId, email }, { onConflict: "id" });
+    const refetched = await supabase
+      .from("profiles")
+      .select("id, email, name, role")
+      .eq("id", userId)
+      .maybeSingle();
+    data = refetched.data;
+  }
+
   if (!data) return null;
   return {
     id: data.id,
@@ -60,7 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       const sessionUser = data.session?.user;
       if (sessionUser) {
-        setUser(await loadProfile(sessionUser.id));
+        setUser(
+          await loadProfile(sessionUser.id, sessionUser.email ?? null),
+        );
       }
       setIsLoading(false);
     });
@@ -71,7 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       const sessionUser = session?.user;
       if (sessionUser) {
-        setUser(await loadProfile(sessionUser.id));
+        setUser(
+          await loadProfile(sessionUser.id, sessionUser.email ?? null),
+        );
       } else {
         setUser(null);
       }

@@ -6,7 +6,7 @@
  * Convex/auth traffic is network-only and pass-through.
  */
 
-const VERSION = "v6";
+const VERSION = "v7";
 const APP_SHELL_CACHE = `quickfix-shell-${VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
