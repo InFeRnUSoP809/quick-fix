@@ -380,7 +380,10 @@ export default function Landing() {
             <img src={logo} alt="" className="size-4 rounded" />
             QuickFix AI
           </span>
-          <span>© {new Date().getFullYear()} · Practical fixes for everyday problems</span>
+          <span>
+            © {new Date().getFullYear()} · Practical fixes for everyday problems
+            <span className="ml-2 opacity-40">· UI-3C5F</span>
+</span>
         </div>
       </footer>
     </div>
