@@ -40,7 +40,7 @@ const steps = [
     body: "QuickFix AI identifies likely causes and narrows them down to the essentials.",
   },
   {
-    title: "Get 3 practical fixes",
+    title: "Get 5 practical fixes",
     body: "Concise, actionable steps you can try immediately — saved to your history.",
   },
 ];
@@ -297,6 +297,8 @@ export default function Landing() {
                   <li>1. Clean vents with compressed air</li>
                   <li>2. Close unused apps</li>
                   <li>3. Use on a hard, flat surface</li>
+                  <li>4. Update drivers and firmware</li>
+                  <li>5. Service fans if noise persists</li>
                 </ol>
               </div>
             </div>
