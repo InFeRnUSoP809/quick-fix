@@ -264,8 +264,16 @@ Deno.serve(async (req) => {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "deepseek-chat",
+          // Fill the {{problem}} placeholder when the prompt uses it
+          // (no-op for prompts that leave it out).
           messages: [
-            { role: "system", content: promptTextToUse },
+            {
+              role: "system",
+              content: promptTextToUse.replace(
+                /\{\{\s*problem\s*\}\}/gi,
+                testText,
+              ),
+            },
             { role: "user", content: `Problem:\n${testText}` },
           ],
           response_format: { type: "json_object" },
@@ -405,8 +413,13 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
+        // Fill the {{problem}} placeholder when the prompt uses it
+        // (no-op for prompts that leave it out).
         messages: [
-          { role: "system", content: promptText },
+          {
+            role: "system",
+            content: promptText.replace(/\{\{\s*problem\s*\}\}/gi, text),
+          },
           { role: "user", content: `Problem:\n${text}` },
         ],
         response_format: { type: "json_object" },
