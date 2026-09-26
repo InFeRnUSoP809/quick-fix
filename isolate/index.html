@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#059669" />
+  <meta name="description"
+    content="QuickFix AI — practical AI-powered solutions to everyday problems." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QuickFix" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <title>QuickFix AI — Practical fixes for everyday problems</title>
+  <script>
+    // Apply the persisted theme before first paint to avoid a light flash
+    // when dark mode is active (works alongside next-themes).
+    (function () {
+      try {
+        var t = localStorage.getItem("theme");
+        if (t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <script type="module" crossorigin src="/assets/index-DFyzj2Oq.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/react-vendor-DvHAnCmn.js">
+  <link rel="modulepreload" crossorigin href="/assets/framer-motion-Dxh5gfiO.js">
+  <link rel="modulepreload" crossorigin href="/assets/radix-ui-DqcQGTOb.js">
+  <link rel="modulepreload" crossorigin href="/assets/charts-Bfi5RW2a.js">
+  <link rel="stylesheet" crossorigin href="/assets/index-HIiOzahn.css">
+</head>
+
+
+<body>
+  <div id="root"></div>
+</body>
+
+</html>

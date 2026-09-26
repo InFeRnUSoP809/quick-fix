@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offline — QuickFix AI</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#059669" />
+    <style>
+      :root {
+        --ink: #1c1c1a;
+        --muted: #6f6f6a;
+        --line: #e8e8e4;
+        --bg: #fbfbf9;
+        --emerald: #34d399;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        letter-spacing: -0.011em;
+        padding: 24px;
+      }
+      .card {
+        max-width: 420px;
+        width: 100%;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 40px 32px;
+        text-align: center;
+      }
+      .badge {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 20px;
+        border-radius: 12px;
+        background: var(--ink);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--emerald);
+      }
+      h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 8px; }
+      p { color: var(--muted); font-size: 0.9rem; line-height: 1.6; margin: 0 0 24px; }
+      button {
+        appearance: none;
+        border: 0;
+        background: var(--ink);
+        color: #fbfbf9;
+        font: inherit;
+        font-weight: 500;
+        font-size: 0.9rem;
+        padding: 10px 22px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:hover { opacity: 0.9; }
+      .hint { margin: 20px 0 0; font-size: 0.75rem; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="badge"><span class="dot"></span></div>
+      <h1>You're currently offline</h1>
+      <p>
+        The QuickFix AI interface may still be available, but getting a Quick
+        Fix requires an internet connection.
+      </p>
+      <button onclick="location.reload()">Try again</button>
+      <p class="hint">QuickFix AI · Practical fixes for everyday problems</p>
+    </main>
+  </body>
+</html>
