@@ -118,7 +118,7 @@ export default function Landing() {
             </span>
             <h1 className="mt-6 text-balance text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
               Everyday problems,{" "}
-              <span className="text-muted-foreground">solved in three steps.</span>
+              <span className="text-muted-foreground">solved in seconds.</span>
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
               Describe what's wrong. QuickFix AI returns a short summary, three
